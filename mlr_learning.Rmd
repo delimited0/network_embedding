@@ -1,0 +1,35 @@
+---
+title: "Multilabel Classification with MLR"
+author: "Patrick Ding"
+date: "2/2/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## packages
+
+```{r packages}
+set.seed(1)
+library(tidyverse)
+library(mlr)
+```
+
+## toy example
+
+```{r}
+yeast = getTaskData(yeast.task)
+labels = colnames(yeast)[1:14]
+yeast.task = makeMultilabelTask(id = "multi", data = yeast, target = labels)
+
+lrn.br = makeLearner("classif.LiblineaRL2LogReg", predict.type = "prob")
+lrn.br = makeMultilabelBinaryRelevanceWrapper(lrn.br)
+mod = train(lrn.br, yeast.task)
+
+rdesc = makeResampleDesc(method = "Subsample", stratify = FALSE, 
+                         iters = 10, split = 3/25)
+r = resample(learner = lrn.br, task = yeast.task, resampling = rdesc, 
+             show.info = FALSE, measures = list(multilabel.f1))
+```
