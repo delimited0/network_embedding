@@ -12,184 +12,148 @@ knitr::opts_chunk$set(echo = TRUE)
 ## Packages
 
 ```{r packages, message = FALSE}
-set.seed(1)
-library(R.matlab)
-library(tidyverse)
-library(magrittr)
-library(mlr)
-library(reticulate)
-
-# reticulate::py_discover_config()
-use_python("/Users/patrickding/anaconda3/bin/python")
-sk <- reticulate::import("sklearn")
-```
-
-## helper functions
-
-```{r}
-mm.f1.fun <- function(task, model, pred, feats, extra.args) {
-  # scikit-learn f1 score
-  sk$metrics$f1_score(y_true = getPredictionTruth(pred), 
-                      y_pred = getPredictionResponse(pred), 
-                      average = extra.args$average)
-}
-micro.f1 <- makeMeasure(id = "micro.f1", name = "micro f1 score", 
-                     minimize = FALSE, 
-                     properties = c("classif", "classif.multi", "multilabel"),
-                     best = 1, worst = 0, fun = mm.f1.fun,
-                     extra.args = list(average = "micro"))
-macro.f1 <- makeMeasure(id = "macro.f1", name = "macro f1 score", 
-                     minimize = FALSE, 
-                     properties = c("classif", "classif.multi", "multilabel"),
-                     best = 1, worst = 0, fun = mm.f1.fun,
-                     extra.args = list(average = "macro"))
-
-as_embed_df <- function(embed_mat, label) {
-  # convert matrix to embedding tibble with multiclass label
-  as_data_frame(embed_mat) %>% 
-    cbind(label) %>%
-    select(-V1)
-}
-
-as_embed_ml_df <- function(embed_df) {
-  # convert multiclass labeled embedding tibble with multilabel indicators
-  nlabel <- nlevels(embed_df$label)
-  embed_ml_df <- embed_df %>% 
-    mutate(i = TRUE) %>% 
-    spread(label, i, fill = FALSE)
-  return(embed_ml_df)
-}
-```
-
-## Flickr data
-
-```{r flickr}
-flickr_dat <- readMat("true_line_flickr.mat")
-flickr_rns_002_dat <- readMat("rns_002_flickr.mat")
-flickr_rns_005_dat <- readMat("rns_005_flickr.mat")
-
-flickr_I_embed <- flickr_dat$LINEtypeIFlicker
-flickr_II_embed <- flickr_dat$LINEtypeIIFlicker
-flickr_rns_I_embed <- flickr_rns_002_dat$rns002typeIFlicker
-flickr_rns_II_embed <- flickr_rns_002_dat$rns002typeIIFlicker
-flickr_rns_005_I_embed <- flickr_rns_005_dat$rns005typeIFlicker
-flickr_rns_005_II_embed <- flickr_rns_005_dat$rns005typeIIFlicker
-flickr_label <- as.factor(flickr_dat$Label)
-
-# LINE paper embeddings
-flickr_I_dat <- as_embed_df(flickr_I_embed, flickr_label)
-flickr_II_dat <- as_embed_df(flickr_II_embed, flickr_label)
-
-flickr_I_dat_ml <- as_embed_ml_df(flickr_I_dat)
-colnames(flickr_I_dat_ml)[101:109] %<>% paste0("class_", .)
-flickr_II_dat_ml <- as_embed_ml_df(flickr_II_dat)
-colnames(flickr_II_dat_ml)[101:109] %<>% paste0("class_", .)
-
-# RNS embeddings
-flickr_rns_I_dat <- as_embed_df(flickr_rns_I_embed, flickr_label)
-flickr_rns_II_dat <- as_embed_df(flickr_rns_II_embed, flickr_label)
-flickr_rns_005_I_dat <- as_embed_df(flickr_rns_005_I_embed, flickr_label)
-flickr_rns_005_II_dat <- as_embed_df(flickr_rns_005_II_embed, flickr_label)
-
-flickr_rns_I_dat_ml <- as_embed_ml_df(flickr_rns_I_dat)
-colnames(flickr_rns_I_dat_ml)[101:109] %<>% paste0("class_", .)
-flickr_rns_II_dat_ml <- as_embed_ml_df(flickr_rns_II_dat)
-colnames(flickr_rns_II_dat_ml)[101:109] %<>% paste0("class_", .)
+set.seed(13)
+source("experiment_tools.R")
 ```
 
 ## classification settings
 
 ```{r class settings}
 # L2 penalized logistic regression
-l2logreg_learner <- makeLearner("classif.LiblineaRL2LogReg", predict.type = "response")
+l2logreg <- makeLearner("classif.LiblineaRL2LogReg", predict.type = "response")
+l2logreg_ml <- l2logreg %>% 
+  makeConstantClassWrapper() %>%
+  makeMultilabelBinaryRelevanceWrapper()
+frac_descs = lapply(seq(.1, .9, .1), function(frac) {
+  makeResampleDesc(method = "Subsample", stratify = FALSE, iters = 10, split = frac)
+})  
 ```
 
-## Flickr multiclass
+## Flickr
+
+### Flickr data
+
+```{r flickr}
+flickr_dat <- readMat("Flickr/true_line_flickr.mat")
+flickr_label <- as.factor(flickr_dat$Label)
+flickr_embeds <- lapply(dir(path = "Flickr", pattern = "*_flickr", full.names = TRUE), 
+                        readMat, USE.NAMES = TRUE)
+names(flickr_embeds) <- dir(path = "Flickr", pattern = "*_flickr") %>% 
+  gsub(x = ., pattern = ".mat", replacement = "")
+
+flickr_embed_dats <- 
+  lapply(flickr_embeds, 
+         function(x) list(t1_embed = as_embed_df(get_type_k(x, 1), flickr_label), 
+                          t2_embed = as_embed_df(get_type_k(x, 2), flickr_label))
+)
+```
+
+### Flickr multiclass
 
 ```{r flickr multiclass}
-flickr_I_task <- makeClassifTask(id = "multi", data = flickr_I_dat, target = "label")
-flickr_II_task <- makeClassifTask(id = "multi", data = flickr_II_dat, target = "label")
-flickr_rns_I_task <- makeClassifTask(id = "multi", data = flickr_rns_I_dat, target = "label")
-flickr_rns_II_task <- makeClassifTask(id = "multi", data = flickr_rns_II_dat, target = "label")
-flickr_rns_005_I_task <- makeClassifTask(id = "multi", data = flickr_rns_005_I_dat, target = "label")
-flickr_rns_005_II_task <- makeClassifTask(id = "multi", data = flickr_rns_005_II_dat, target = "label")
+flickr_tasks <- lapply(unlist(flickr_embed_dats, recursive = FALSE), function(embd) {
+    makeClassifTask(data = embd, target = "label")
+  }
+)
 
-flickr_desc = makeResampleDesc(method = "Subsample", stratify = FALSE, 
+flickr_perf <- repeat_resampler(flickr_tasks, frac_descs, l2logreg, 20)
+
+flickr_t1_tables <- map(flickr_perf, ~.[mod(1:nrow(.), 2) == 1,])
+map2(flickr_t1_tables, names(flickr_t1_tables), ~kable(x = .x, digits = 4, caption = .y))
+flickr_t2_tables <- map(flickr_perf, ~.[mod(1:nrow(.), 2) == 0,])
+map2(flickr_t2_tables, names(flickr_t2_tables), ~kable(x = .x, digits = 4, caption = .y))
+```
+
+
+
+## Blog Catalog Data
+
+### Blog data
+
+```{r}
+bg_label <- readMat("BlogCatalog/LabelBlogCatalog.mat")
+bg_embeds <- lapply(dir(path = "BlogCatalog", pattern = "*_BlogCatalog", full.names = TRUE), 
+                    readMat, USE.NAMES = TRUE)
+names(bg_embeds) <- dir(path = "BlogCatalog", pattern = "*_BlogCatalog") %>% 
+  gsub(x = ., pattern = ".mat", replacement = "")
+
+# true_line_I_embed <- readMat("truel_kkk01st.mat")
+
+bg_label_mat <- bg_label$labelmatrix == 1
+bg_label_mat <- bg_label_mat[, c(-39)]
+colnames(bg_label_mat) <- paste0("class_", 1:ncol(bg_label_mat))
+
+bg_embed_dats <- 
+  lapply(bg_embeds, 
+         function(x) list(t1_embed = as_embed_df(get_type_k(x, 1), bg_label_mat), 
+                          t2_embed = as_embed_df(get_type_k(x, 2), bg_label_mat))
+)
+
+# original line embedding
+bg_tline_I_dat <- as_embed_df(true_line_I_embed$true.kkk01st, bg_label_mat)
+```
+
+### Blog multilabel classification
+
+```{r}
+bg_tasks <- lapply(unlist(bg_embed_dats, recursive = FALSE), function(embd) {
+    makeMultilabelTask(data = embd, target = paste0("class_", 1:ncol(bg_label_mat)))
+  }
+)
+bg_tline_I_task <- makeMultilabelTask(data = bg_tline_I_dat, 
+                                      target = paste0("class_", 1:ncol(bg_label_mat)))
+
+bg_desc = makeResampleDesc(method = "Subsample", stratify = FALSE, 
                          iters = 10, split = 3/25)
 
-flickr_I_resample = resample(learner = l2logreg_learner, task = flickr_I_task, 
-                             resampling = flickr_desc, 
-                             show.info = FALSE, measures = list(micro.f1, macro.f1))
-flickr_II_resample = resample(learner = l2logreg_learner, task = flickr_II_task, 
-                             resampling = flickr_desc, 
-                             show.info = FALSE, measures = list(micro.f1, macro.f1))
-flickr_rns_I_resample = resample(learner = l2logreg_learner, task = flickr_rns_I_task, 
-                             resampling = flickr_desc, 
-                             show.info = FALSE, measures = list(micro.f1, macro.f1))
-flickr_rns_II_resample = resample(learner = l2logreg_learner, task = flickr_rns_II_task, 
-                             resampling = flickr_desc, 
-                             show.info = FALSE, measures = list(micro.f1, macro.f1))
-flickr_rns_005_I_resample = resample(learner = l2logreg_learner, task = flickr_rns_005_I_task, 
-                             resampling = flickr_desc, 
-                             show.info = FALSE, measures = list(micro.f1, macro.f1))
-flickr_rns_005_II_resample = resample(learner = l2logreg_learner, task = flickr_rns_005_II_task, 
-                             resampling = flickr_desc, 
-                             show.info = FALSE, measures = list(micro.f1, macro.f1))
-
-flickr_I_resample
-flickr_II_resample
-flickr_rns_I_resample
-flickr_rns_II_resample
-flickr_rns_005_I_resample
-flickr_rns_005_II_resample
+bg_perf <- repeat_resampler(bg_tasks, list(bg_desc), l2logreg_ml, 20)
+map(bg_perf, ~.[mod(1:nrow(.), 2) == 1,]) %>% do.call(cbind, .) %>% 
+  kable(digits = 4, caption = "Type 1 Embedding")
+map(bg_perf, ~.[mod(1:nrow(.), 2) == 0,]) %>% do.call(cbind, .) %>% 
+  kable(digits = 4, caption = "Type 2 Embedding")
 ```
 
-
-## multi label classification
-
-#### classification settings
-
-```{r flickr_settings}
-flickr_svm <- makeLearner("classif.xgboost", predict.type = "response") %>%
-  makeMultilabelBinaryRelevanceWrapper()
-flickr_desc = makeResampleDesc(method = "Subsample", stratify = FALSE, 
-                         iters = 20, split = 20/100)
+```{r}
+hist(apply(bg_embed_dats$LINE_BlogCatalog$t1_embed, 1, function(x) sqrt(sum(x^2))))
+hist(apply(bg_embed_dats$rns_002_BlogCatalog$t1_embed, 1, function(x) sqrt(sum(x^2))))
+hist(apply(bg_embed_dats$rns_01_BlogCatalog$t1_embed, 1, function(x) sqrt(sum(x^2))))
+hist(apply(bg_embed_dats$rns_02_BlogCatalog$t1_embed, 1, function(x) sqrt(sum(x^2))))
 ```
 
-#### Flickr Data, multilabel, LINE embedding
+## PPI
 
-```{r line}
-flickr_I_task <- makeMultilabelTask(id = "multi", data = flickr_I_dat_ml, 
-                                    target = paste0("class_", 1:9))
-flickr_II_task <- makeMultilabelTask(id = "multi", data = flickr_II_dat_ml, 
-                                     target = paste0("class_", 1:9))
+### PPI Data
 
-flickr_I_resample = resample(learner = flickr_svm, task = flickr_I_task, 
-                             resampling = flickr_desc, 
-                             show.info = FALSE, measures = list(multilabel.f1))
-flickr_II_resample = resample(learner = flickr_svm, task = flickr_II_task, 
-                             resampling = flickr_desc, 
-                             show.info = FALSE, measures = list(multilabel.f1))
+```{r}
+ppi_label <- readMat("Protein/Labelppi.mat")
+ppi_label_mat <- ppi_label$Label.ppi %>% as.matrix()
+ppi_embeds <- lapply(dir(path = "Protein", pattern = "*_ppi", full.names = TRUE), 
+                     readMat, USE.NAMES = TRUE)
+names(ppi_embeds) <- dir(path = "Protein", pattern = "*_ppi") %>% 
+  gsub(x = ., pattern = ".mat", replacement = "")
 
-flickr_I_resample
-flickr_II_resample
+colnames(ppi_label_mat) <- paste0("class_", 1:ncol(ppi_label_mat))
+
+ppi_embed_dats <- 
+  lapply(ppi_embeds, 
+         function(x) list(t1_embed = as_embed_df(get_type_k(x, 1), ppi_label_mat), 
+                          t2_embed = as_embed_df(get_type_k(x, 2), ppi_label_mat))
+)
 ```
 
-#### Flickr Data, multilabel, R-NS
+### PPI multilabel benchmark
 
-```{r rns}
-flickr_rns_I_task <- makeMultilabelTask(id = "multi", data = flickr_rns_I_dat_ml, 
-                                    target = paste0("class_", 1:9))
-flickr_rns_II_task <- makeMultilabelTask(id = "multi", data = flickr_rns_II_dat_ml, 
-                                     target = paste0("class_", 1:9))
+```{r}
+ppi_tasks <- lapply(unlist(ppi_embed_dats, recursive = FALSE), function(embd) {
+    makeMultilabelTask(data = embd, target = paste0("class_", 1:ncol(ppi_label_mat)))
+  }
+)
+ppi_desc = makeResampleDesc(method = "Subsample", stratify = FALSE, 
+                         iters = 10, split = 3/25)
+ppi_perf <- repeat_resampler(ppi_tasks, list(ppi_desc), l2logreg_ml, 20)
 
-flickr_rns_I_resample = resample(learner = flickr_svm, task = flickr_rns_I_task, 
-                             resampling = flickr_desc, 
-                             show.info = FALSE, measures = list(multilabel.f1))
-flickr_rns_II_resample = resample(learner = flickr_svm, task = flickr_rns_II_task, 
-                             resampling = flickr_desc, 
-                             show.info = FALSE, measures = list(multilabel.f1))
-
-flickr_rns_I_resample
-flickr_rns_II_resample
+map(ppi_perf, ~.[mod(1:nrow(.), 2) == 1,]) %>% do.call(cbind, .) %>% 
+  kable(digits = 4, caption = "Type 1 Embedding")
+map(ppi_perf, ~.[mod(1:nrow(.), 2) == 0,]) %>% do.call(cbind, .) %>% 
+  kable(digits = 4, caption = "Type 2 Embedding")
 ```
