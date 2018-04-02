@@ -1,0 +1,260 @@
+---
+title: "reporting"
+author: "Patrick Ding"
+date: "4/1/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(clipr)
+library(ggplot2)
+library(scales)
+```
+
+## Blog Catalog
+
+### LaTeX Tables
+
+```{r}
+load(file = "perf_data/blog.Rda")
+
+bg_perf_t1_micro <- perf_table(bg_perf$micro_f1, TRUE, table_format = "latex", 
+                               font_size = 10, 
+                               title = "Blog Catalog, Type I, F1-Micro")
+bg_perf_t1_macro <- perf_table(bg_perf$macro_f1, TRUE, table_format = "latex", 
+                               font_size = 10, 
+                               title = "Blog Catalog, Type I, F1-Macro")
+bg_perf_t2_micro <- perf_table(bg_perf$micro_f1, FALSE, table_format = "latex", 
+                               font_size = 10, 
+                               title = "Blog Catalog, Type II, F1-Micro")
+bg_perf_t2_macro <- perf_table(bg_perf$macro_f1, FALSE, table_format = "latex", 
+                               font_size = 10, 
+                               title = "Blog Catalog, Type II, F1-Macro")
+
+write_clip(bg_perf_t1_micro)
+write_clip(bg_perf_t1_macro)
+write_clip(bg_perf_t2_micro)
+write_clip(bg_perf_t2_macro)
+```
+
+### Plots
+
+```{r}
+bg_compare_dat <- 
+  rbind(
+    perf_as_df(rowMeans(bg_perf$micro_f1, FALSE, 2), "Micro-F1"),
+    perf_as_df(rowMeans(bg_perf$macro_f1, FALSE, 2), "Macro-F1")
+  ) %>% 
+  # filter(Method %in% c("kkk_BlogCatalog", "LINE_BlogCatalog", 
+                       # "nopenalty_BlogCatalog", "rns_015_BlogCatalog")) %>%
+  gather(key = "Split", value = "Score", -Method, -Type, -measure) %>%
+  mutate(Labeled = as.numeric(str_replace(Split, "split_", "")),
+         Data = "Blog Catalog",
+         Penalty = str_extract(Method, "\\d{2,4}") %>% 
+           paste0(".", .) %>% 
+           as.numeric(),
+         Method = str_replace(Method, "_.*", ""))
+
+bg_compare_dat %>% 
+  filter(measure == "Micro-F1" & Type == "t1_embed") %>%
+  ggplot(aes(x = Labeled, y = Score, color = Method)) +
+    geom_path() + geom_point() +
+    theme_minimal() + 
+    theme(legend.position = "bottom")
+```
+
+## Wikipedia
+
+### LaTeX Tables
+
+```{r}
+load(file = "perf_data/wiki.Rda")
+
+wiki_perf_t1_micro <- perf_table(wiki_perf$micro_f1, TRUE, table_format = "latex", font_size = 10, 
+                               title = "Wikipedia, Type I, F1-Micro")
+wiki_perf_t1_macro <- perf_table(wiki_perf$macro_f1, TRUE, table_format = "latex", font_size = 10, 
+                               title = "Wikipedia, Type I, F1-Macro")
+wiki_perf_t2_micro <- perf_table(wiki_perf$micro_f1, FALSE, table_format = "latex", font_size = 10, 
+                               title = "Wikipedia, Type II, F1-Micro")
+wiki_perf_t2_macro <- perf_table(wiki_perf$macro_f1, FALSE, table_format = "latex", font_size = 10, 
+                               title = "Wikipedia, Type II, F1-Macro")
+
+write_clip(wiki_perf_t1_micro)
+write_clip(wiki_perf_t1_macro)
+write_clip(wiki_perf_t2_micro)
+write_clip(wiki_perf_t2_macro)
+```
+
+### Plots
+
+```{r}
+wiki_compare_dat <- 
+  rbind(
+    perf_as_df(rowMeans(wiki_perf$micro_f1, FALSE, 2), "Micro-F1"),
+    perf_as_df(rowMeans(wiki_perf$macro_f1, FALSE, 2), "Macro-F1")
+  ) %>% 
+  # filter(Method %in% c("kkk_POS", "LINE_POS", 
+  #                      "nopenalty_POS", "rns_02_POS")) %>%
+  gather(key = "Split", value = "Score", -Method, -Type, -measure) %>%
+  mutate(Labeled = as.numeric(str_replace(Split, "split_", "")),
+         Data = "Wikipedia",
+         Penalty = str_extract(Method, "\\d{2,4}") %>% 
+           paste0(".", .) %>% 
+           as.numeric(),
+         Method = str_replace(Method, "_.*", ""))
+```
+
+## PPI
+
+### LaTeX Tables
+
+```{r}
+load(file = "perf_data/ppi.Rda")
+
+ppi_perf_t1_micro <- perf_table(ppi_perf$micro_f1, TRUE, table_format = "latex", font_size = 10, 
+                               title = "PPI, Type I, F1-Micro")
+ppi_perf_t1_macro <- perf_table(ppi_perf$macro_f1, TRUE, table_format = "latex", font_size = 10, 
+                               title = "PPI, Type I, F1-Macro")
+ppi_perf_t2_micro <- perf_table(ppi_perf$micro_f1, FALSE, table_format = "latex", font_size = 10, 
+                               title = "PPI, Type II, F1-Micro")
+ppi_perf_t2_macro <- perf_table(ppi_perf$macro_f1, FALSE, table_format = "latex", font_size = 10, 
+                               title = "PPI, Type II, F1-Macro")
+
+write_clip(ppi_perf_t1_micro)
+write_clip(ppi_perf_t1_macro)
+write_clip(ppi_perf_t2_micro)
+write_clip(ppi_perf_t2_macro)
+```
+
+### Plots
+
+```{r}
+ppi_compare_dat <- 
+  rbind(
+    perf_as_df(rowMeans(ppi_perf$micro_f1, FALSE, 2), "Micro-F1"),
+    perf_as_df(rowMeans(ppi_perf$macro_f1, FALSE, 2), "Macro-F1")
+  ) %>% 
+  # filter(Method %in% c("kkk_ppi", "LINE_ppi", 
+  #                      "nopenalty_ppi", "rns_015_ppi")) %>%
+  gather(key = "Split", value = "Score", -Method, -Type, -measure) %>%
+  mutate(Labeled = as.numeric(str_replace(Split, "split_", "")),
+         Data = "PPI (Homo Sapiens)",
+         Penalty = str_extract(Method, "\\d{2,4}") %>% 
+           paste0(".", .) %>% 
+           as.numeric(),
+         Method = str_replace(Method, "_.*", ""))
+```
+
+## Flickr
+
+### LaTeX Tables
+
+```{r}
+load(file = "perf_data/flickr.Rda")
+
+flickr_perf_t1_micro <- perf_table(flickr_perf$micro_f1, TRUE, table_format = "latex", font_size = 10, 
+                               title = "flickr, Type I, F1-Micro")
+flickr_perf_t1_macro <- perf_table(flickr_perf$macro_f1, TRUE, table_format = "latex", font_size = 10, 
+                               title = "flickr, Type I, F1-Macro")
+flickr_perf_t2_micro <- perf_table(flickr_perf$micro_f1, FALSE, table_format = "latex", font_size = 10, 
+                               title = "flickr, Type II, F1-Micro")
+flickr_perf_t2_macro <- perf_table(flickr_perf$macro_f1, FALSE, table_format = "latex", font_size = 10, 
+                               title = "flickr, Type II, F1-Macro")
+
+write_clip(flickr_perf_t1_micro)
+write_clip(flickr_perf_t1_macro)
+write_clip(flickr_perf_t2_micro)
+write_clip(flickr_perf_t2_macro)
+```
+
+### Plots
+
+```{r}
+flickr_compare_dat <- 
+  rbind(
+    perf_as_df(rowMeans(flickr_perf$micro_f1, FALSE, 2), "Micro-F1"),
+    perf_as_df(rowMeans(flickr_perf$macro_f1, FALSE, 2), "Macro-F1")
+  ) %>% 
+  # filter(Method %in% c("kkk_flickr", "true_line_flickr", 
+  #                      "nopenalty_flickr", "rns_008_flickr")) %>%
+  gather(key = "Split", value = "Score", -Method, -Type, -measure) %>%
+  mutate(Labeled = as.numeric(str_replace(Split, "split_", "")),
+         Data = "Flickr",
+         Penalty = str_extract(Method, "\\d{2,4}") %>%
+           paste0(".", .) %>% 
+           as.numeric(),
+         Method = str_replace_all(Method, "_flickr|_\\d{2,4}|true_", "") %>%
+                  str_replace("line", "LINE"))
+```
+
+### Combined Performance Plot
+
+```{r}
+compare_dat <- rbind(flickr_compare_dat, bg_compare_dat,
+                     ppi_compare_dat, wiki_compare_dat)
+
+comp_typeI <- compare_dat %>%
+  filter(Method %in% c("LINE", "nopenalty", "kkk") | 
+         (Data == "Blog Catalog" & Penalty == 0.015) |
+         (Data == "Wikipedia" & Penalty == 0.015) |
+         (Data == "PPI (Homo Sapiens)" & Penalty == 0.015) |
+         (Data == "Flickr" & Penalty == 0.008)) %>%
+  filter(Type == "t1_embed") %>%
+  ggplot(aes(x = Labeled, y = Score, color = Method)) +
+    facet_wrap(measure ~ Data, scales = "free", nrow = 2) + 
+    geom_path() + geom_point(aes(shape = Method)) +
+    theme_bw() + 
+    theme(legend.position = "bottom", legend.text = element_text(size = 12)) +
+    scale_x_continuous(breaks = seq(0, 1, 0.2)) +
+    ggtitle("Type I Embedding")
+
+comp_typeII <- compare_dat %>%
+  filter(Method %in% c("LINE", "nopenalty", "kkk") | 
+         (Data == "Blog Catalog" & Penalty == 0.015) |
+         (Data == "Wikipedia" & Penalty == 0.015) |
+         (Data == "PPI (Homo Sapiens)" & Penalty == 0.015) |
+         (Data == "Flickr" & Penalty == 0.008)) %>%
+  filter(Type == "t2_embed") %>%
+  ggplot(aes(x = Labeled, y = Score, color = Method)) +
+    facet_wrap(measure ~ Data, scales = "free", nrow = 2) + 
+    geom_path() + geom_point(aes(shape = Method)) +
+    theme_bw() + 
+    theme(legend.position = "bottom", legend.text = element_text(size = 12)) +
+    scale_x_continuous(breaks = seq(0, 1, 0.2)) +
+    ggtitle("Type II Embedding")
+
+ggsave("comp_typeI.pdf", plot = comp_typeI, device = "pdf", path = "plots")
+ggsave("comp_typeII.pdf", plot = comp_typeII, device = "pdf", path = "plots")
+```
+
+### Tuning Plot
+
+```{r}
+tune_typeI <- compare_dat %>% 
+  filter(Method == "rns", Labeled == 0.5) %>%
+  filter(Type == "t1_embed") %>%
+  ggplot(aes(x = Penalty, y = Score)) +
+    facet_wrap(measure ~ Data, scales = "free", nrow = 2) +
+    geom_path() + geom_point() +
+    theme_bw() + 
+    theme(legend.position = "bottom", legend.text = element_text(size = 12)) +
+  labs(title = "Type I Embedding")
+    
+tune_typeII <- compare_dat %>% 
+  filter(Method == "rns", Labeled == 0.5) %>%
+  filter(Type == "t1_embed") %>%
+  ggplot(aes(x = Penalty, y = Score)) +
+    facet_wrap(measure ~ Data, scales = "free", nrow = 2) +
+    geom_path() + geom_point() +
+    theme_bw() + 
+    theme(legend.position = "bottom", legend.text = element_text(size = 12)) + 
+  labs(title = "Type II Embedding")
+
+ggsave("tune_typeI.pdf", plot = tune_typeI, device = "pdf", path = "plots")
+ggsave("tune_typeII.pdf", plot = tune_typeII, device = "pdf", path = "plots")
+```
+

@@ -12,7 +12,6 @@ knitr::opts_chunk$set(echo = TRUE)
 ## Packages
 
 ```{r packages, message = FALSE}
-set.seed(13)
 source("experiment_tools.R")
 ```
 
@@ -22,7 +21,7 @@ source("experiment_tools.R")
 # L2 penalized logistic regression
 l2logreg <- makeLearner("classif.LiblineaRL2LogReg", predict.type = "response")
 l2logreg_ml <- l2logreg %>% 
-  makeConstantClassWrapper() %>%
+  # makeConstantClassWrapper() %>%
   makeMultilabelBinaryRelevanceWrapper()
 frac_descs = lapply(seq(.1, .9, .1), function(frac) {
   makeResampleDesc(method = "Subsample", stratify = FALSE, iters = 10, split = frac)
@@ -35,7 +34,11 @@ frac_descs = lapply(seq(.1, .9, .1), function(frac) {
 
 ```{r flickr}
 flickr_dat <- readMat("Flickr/true_line_flickr.mat")
-flickr_label <- as.factor(flickr_dat$Label)
+flickr_label_mat <- flickr_dat$Label %>% 
+  as.factor() %>%
+  data.frame() %>%
+  model.matrix(~ . - 1, data = .) == 1
+colnames(flickr_label_mat) <- paste0("class_", 1:ncol(flickr_label_mat))
 flickr_embeds <- lapply(dir(path = "Flickr", pattern = "*_flickr", full.names = TRUE), 
                         readMat, USE.NAMES = TRUE)
 names(flickr_embeds) <- dir(path = "Flickr", pattern = "*_flickr") %>% 
@@ -43,8 +46,8 @@ names(flickr_embeds) <- dir(path = "Flickr", pattern = "*_flickr") %>%
 
 flickr_embed_dats <- 
   lapply(flickr_embeds, 
-         function(x) list(t1_embed = as_embed_df(get_type_k(x, 1), flickr_label), 
-                          t2_embed = as_embed_df(get_type_k(x, 2), flickr_label))
+         function(x) list(t1_embed = as_embed_df(get_type_k(x, 1), flickr_label_mat), 
+                          t2_embed = as_embed_df(get_type_k(x, 2), flickr_label_mat))
 )
 ```
 
@@ -52,18 +55,23 @@ flickr_embed_dats <-
 
 ```{r flickr multiclass}
 flickr_tasks <- lapply(unlist(flickr_embed_dats, recursive = FALSE), function(embd) {
-    makeClassifTask(data = embd, target = "label")
+    makeMultilabelTask(data = embd, target = paste0("class_", 1:ncol(flickr_label_mat)))
   }
 )
 
-flickr_perf <- repeat_resampler(flickr_tasks, frac_descs, l2logreg, 20)
+set.seed(13)
+# flickr_perf <- repeat_resampler(flickr_tasks, frac_descs, l2logreg, 20)
+flickr_perf <- multilabel_resample(tasks = flickr_tasks, splits = seq(.1, .9, .1), 
+                               labels = as.matrix(flickr_label_mat), 
+                               learner = l2logreg_ml, iters = 5, min_case = 1)
+save(flickr_perf, file = "perf_data/flickr.Rda")
 
 flickr_t1_tables <- map(flickr_perf, ~.[mod(1:nrow(.), 2) == 1,])
-map2(flickr_t1_tables, names(flickr_t1_tables), ~kable(x = .x, digits = 4, caption = .y))
+map2(flickr_t1_tables, names(flickr_t1_tables), 
+     ~kable(x = .x, digits = 4, format = "html"))
 flickr_t2_tables <- map(flickr_perf, ~.[mod(1:nrow(.), 2) == 0,])
 map2(flickr_t2_tables, names(flickr_t2_tables), ~kable(x = .x, digits = 4, caption = .y))
 ```
-
 
 
 ## Blog Catalog Data
@@ -80,7 +88,6 @@ names(bg_embeds) <- dir(path = "BlogCatalog", pattern = "*_BlogCatalog") %>%
 # true_line_I_embed <- readMat("truel_kkk01st.mat")
 
 bg_label_mat <- bg_label$labelmatrix == 1
-bg_label_mat <- bg_label_mat[, c(-39)]
 colnames(bg_label_mat) <- paste0("class_", 1:ncol(bg_label_mat))
 
 bg_embed_dats <- 
@@ -90,7 +97,7 @@ bg_embed_dats <-
 )
 
 # original line embedding
-bg_tline_I_dat <- as_embed_df(true_line_I_embed$true.kkk01st, bg_label_mat)
+# bg_tline_I_dat <- as_embed_df(true_line_I_embed$true.kkk01st, bg_label_mat)
 ```
 
 ### Blog multilabel classification
@@ -100,16 +107,19 @@ bg_tasks <- lapply(unlist(bg_embed_dats, recursive = FALSE), function(embd) {
     makeMultilabelTask(data = embd, target = paste0("class_", 1:ncol(bg_label_mat)))
   }
 )
-bg_tline_I_task <- makeMultilabelTask(data = bg_tline_I_dat, 
-                                      target = paste0("class_", 1:ncol(bg_label_mat)))
+# bg_tline_I_task <- makeMultilabelTask(data = bg_tline_I_dat, 
+#                                       target = paste0("class_", 1:ncol(bg_label_mat)))
 
-bg_desc = makeResampleDesc(method = "Subsample", stratify = FALSE, 
-                         iters = 10, split = 3/25)
+set.seed(13)
+# bg_perf <- repeat_resampler(bg_tasks, frac_descs, l2logreg_ml, 20)
+bg_perf <- multilabel_resample(tasks = bg_tasks, splits = seq(.1, .9, .1), 
+                               labels = bg_label_mat, learner = l2logreg_ml, 
+                               iters = 5, min_case = 1)
+save(bg_perf, file = "perf_data/blog.Rda")
 
-bg_perf <- repeat_resampler(bg_tasks, list(bg_desc), l2logreg_ml, 20)
-map(bg_perf, ~.[mod(1:nrow(.), 2) == 1,]) %>% do.call(cbind, .) %>% 
-  kable(digits = 4, caption = "Type 1 Embedding")
-map(bg_perf, ~.[mod(1:nrow(.), 2) == 0,]) %>% do.call(cbind, .) %>% 
+map(bg_perf, ~.[mod(1:nrow(.), 2) == 1,]) %>% 
+  kable(digits = 4, caption = "Type 1 Embedding", format = "latex")
+map(bg_perf, ~.[mod(1:nrow(.), 2) == 0,]) %>%
   kable(digits = 4, caption = "Type 2 Embedding")
 ```
 
@@ -148,12 +158,70 @@ ppi_tasks <- lapply(unlist(ppi_embed_dats, recursive = FALSE), function(embd) {
     makeMultilabelTask(data = embd, target = paste0("class_", 1:ncol(ppi_label_mat)))
   }
 )
-ppi_desc = makeResampleDesc(method = "Subsample", stratify = FALSE, 
-                         iters = 10, split = 3/25)
-ppi_perf <- repeat_resampler(ppi_tasks, list(ppi_desc), l2logreg_ml, 20)
+set.seed(13)
+# ppi_descs <- lapply(seq(.1, .9, .1), function(frac) {
+#   mccv <- small_class_mccv(label_mat = ppi_label_mat, split = frac, iters = 10)
+#   makeResampleInstance(desc = "Holdout", train.inds = mccv$trains, test.inds = mccv$tests, 
+#                        size = nrow(ppi_label_mat))
+# })  
+# ppi_perf <- repeat_resampler(ppi_tasks, frac_descs, l2logreg_ml, 20)
+
+ppi_perf <- multilabel_resample(tasks = ppi_tasks, splits = seq(.1, .9, .1), 
+                                labels = ppi_label_mat, learner = l2logreg_ml, 
+                                iters = 5, min_case = 1)
+save(ppi_perf, file = "perf_data/ppi.Rda")
+
+apply(ppi_perf$micro_f1, MARGIN = c(1, 2), mean)
+apply(ppi_perf$macro_f1, MARGIN = c(1, 2), mean)
 
 map(ppi_perf, ~.[mod(1:nrow(.), 2) == 1,]) %>% do.call(cbind, .) %>% 
-  kable(digits = 4, caption = "Type 1 Embedding")
+  kable(digits = 4, caption = "Type 1 Embedding", format = "latex")
 map(ppi_perf, ~.[mod(1:nrow(.), 2) == 0,]) %>% do.call(cbind, .) %>% 
-  kable(digits = 4, caption = "Type 2 Embedding")
+  kable(digits = 4, caption = "Type 2 Embedding", format = "latex")
+```
+
+## Wikipedia
+
+### Wikipedia data
+
+```{r}
+wiki_label <- readMat("wikipedia/LabelPOS.mat")
+wiki_label_mat <- wiki_label$Label.POS %>% as.matrix()
+wiki_embeds <- lapply(dir(path = "wikipedia", pattern = "*_POS", full.names = TRUE), 
+                     readMat, USE.NAMES = TRUE)
+names(wiki_embeds) <- dir(path = "wikipedia", pattern = "*_POS") %>% 
+  gsub(x = ., pattern = ".mat", replacement = "")
+colnames(wiki_label_mat) <- paste0("class_", 1:ncol(wiki_label_mat))
+wiki_label_mat %<>% .[, -which(colSums(.) < 2)] # cannot keep classes with only 1 case
+
+wiki_embed_dats <- 
+  lapply(wiki_embeds, 
+         function(x) list(t1_embed = as_embed_df(get_type_k(x, 1), wiki_label_mat), 
+                          t2_embed = as_embed_df(get_type_k(x, 2), wiki_label_mat))
+)
+```
+
+### Wikipedia multilabel benchmark
+
+```{r}
+wiki_tasks <- lapply(unlist(wiki_embed_dats, recursive = FALSE), function(embd) {
+    makeMultilabelTask(data = embd, target = colnames(wiki_label_mat))
+  }
+)
+
+set.seed(13)
+# wiki_perf <- repeat_resampler(wiki_tasks, frac_descs, l2logreg_ml, 20)
+wiki_perf <- multilabel_resample(tasks = wiki_tasks, splits = seq(.1, .9, .1), 
+                                labels = wiki_label_mat, learner = l2logreg_ml, 
+                                iters = 5, min_case = 1)
+
+save(wiki_perf, file = "perf_data/wiki.Rda")
+
+apply(wiki_perf$micro_f1, MARGIN = c(1, 2), mean)
+apply(wiki_perf$macro_f1, MARGIN = c(1, 2), mean)
+
+wiki_t1_tables <- map(wiki_perf, ~.[mod(1:nrow(.), 2) == 1,])
+map2(wiki_t1_tables, names(wiki_t1_tables), ~kable(x = .x, digits = 4, caption = .y))
+wiki_t2_tables <- map(wiki_perf, ~.[mod(1:nrow(.), 2) == 0,])
+map2(wiki_t2_tables, names(wiki_t2_tables), ~kable(x = .x, digits = 4, caption = .y))
 ```

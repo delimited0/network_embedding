@@ -4,10 +4,17 @@ library(magrittr)
 library(mlr)
 library(reticulate)
 library(knitr)
+library(kableExtra)
+library(formattable)
 
 # reticulate::py_discover_config()
 use_python("/Users/patrickding/anaconda3/bin/python")
 sk <- reticulate::import("sklearn")
+
+euc_norm <- function(v) {
+  # euclidean norm
+  sqrt(sum(v^2))
+}
 
 mm.f1.fun <- function(task, model, pred, feats, extra.args) {
   # scikit-learn f1 score
@@ -39,11 +46,15 @@ get_type_k <- function(two_embeds, k) {
   else return(two_embeds[[which(c(1, 2) != two_idx)]])
 }
 
-as_embed_df <- function(embed_mat, label) {
+as_embed_df <- function(embed_mat, label, normalize = TRUE) {
   # convert matrix to embedding tibble with multiclass label
-  as_data_frame(embed_mat) %>% 
-    cbind(label) %>%
-    select(-V1)
+  # embed_mat - numeric matrix, embedding
+  # label - logical matrix, labels
+  # normalize - flag, normalize embedding vectors 
+  embed_mat %<>% as_data_frame() %>% select(-V1)
+  if (normalize)
+    embed_mat <- embed_mat / apply(embed_mat, 1, function(x) euc_norm(x))
+  cbind(embed_mat, label)
 }
 
 as_embed_ml_df <- function(embed_df) {
@@ -90,5 +101,70 @@ repeat_resampler <- function(tasks, descs, learner, attempts, verbose = TRUE) {
       # resamps <- c(resamps, res)
     }
   }
+  return(list(micro_f1 = micro_f1_tbl, macro_f1 = macro_f1_tbl))
+}
+
+small_class_mccv <- function(label_mat, split = .5, min_case = 1) {
+  # monte carlo cv for multilabel when some classes have few instances
+  # sample at least 1 instance of each class before sampling rest of data
+  # label_mat - logical matrix, indicating whether label present
+  # split - proportion of data to use for training
+  # min_case - minimum number of cases of each label needed for train split
+  
+  train_inds <- rep(NA, floor(length(label_mat) * split))
+  sample_list <- 1:nrow(label_mat)
+  
+  starting_sample <- c()  
+  for (k in 1:ncol(label_mat)) {
+    candidates <- which(label_mat[, k])
+    # if (sum(candidates) < 2) stop("Must have at least 2 instances in each class")
+    starting_sample <- c(starting_sample, sample(candidates, size = min_case))
+  }
+  starting_sample <- unique(starting_sample)
+  
+  sample_list <- sample_list[-starting_sample]
+  split_size <- floor(split * nrow(label_mat)) - length(starting_sample)
+  train_ind <- c(sample(sample_list, size = split_size, replace = FALSE), starting_sample)
+  test_ind <- which(!(1:nrow(label_mat) %in% train_ind))
+  
+  return(list(train = train_ind, tests = test_ind))
+}
+
+multilabel_resample <- function(tasks, splits, labels, learner, iters, 
+                                min_case, verbose = TRUE) {
+  # tasks  - list of tasks
+  # splits - vector of split proportions p, 0 < p < 1
+  # labels - logical matrix of multilabels
+  # learner - learner object
+  # iters - number of times to resample for each task, split combo
+  # min_case - minimum number of cases of each label needed for training split
+  
+  printer <- function(task, desc)
+    if (verbose) { print(task); print(desc) }
+  
+  micro_f1_tbl <- array(dim = c(length(tasks), length(splits), iters),
+                        dimnames = list(names(tasks), 
+                                        paste0("split_", splits), 
+                                        paste0("iter_", 1:iters)))
+  macro_f1_tbl <- array(dim = c(length(tasks), length(splits), iters),
+                        dimnames = list(names(tasks), 
+                                        paste0("split_", splits), 
+                                        paste0("iter_", 1:iters)))
+  
+  for (s in 1:length(splits)) {
+    for (t in 1:length(tasks)) {
+      printer(names(tasks)[t], splits[s])
+      
+      for (i in 1:iters) {
+        mccv <- small_class_mccv(labels, splits[s], min_case)
+        mod <- train(learner, tasks[[t]], subset = mccv$train)
+        pred <- predict(mod, tasks[[t]], subset = mccv$test)
+        res <- performance(pred, measures = list(micro.f1, macro.f1))
+        micro_f1_tbl[t, s, i] <- res["micro.f1"]
+        macro_f1_tbl[t, s, i] <- res["macro.f1"]
+      }
+    }
+  }
+  
   return(list(micro_f1 = micro_f1_tbl, macro_f1 = macro_f1_tbl))
 }
