@@ -1,0 +1,104 @@
+---
+title: "Embedding Visualization"
+author: "Patrick Ding"
+date: "4/8/2018"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+source("experiment_tools.R")
+library(R.matlab)
+library(ggplot2)
+library(tidyverse)
+library(ggrepel)
+```
+
+## Karate Embedding
+
+```{r}
+karate_embeds <- lapply(dir("Karate", full.names = TRUE), readMat)
+names(karate_embeds) <- str_replace(dir("Karate"), "\\.mat", "")
+
+karate_I_embed <- 
+  map(names(karate_embeds), 
+      ~ data.frame(karate_embeds[[.]]$typeIembed, 
+                   method = str_replace(., "Karate", ""),
+                   label = factor(karate_embeds[[.]]$label))) %>% 
+  reduce(rbind) %>%
+  group_by(method) %>%
+  mutate(ID = row_number()) %>% 
+  ungroup() %>%
+  mutate(type = "Type I")
+  
+karate_II_embed <- 
+  map(names(karate_embeds), 
+      ~ data.frame(karate_embeds[[.]]$typeIIembed, 
+                   method = str_replace(., "Karate", ""),
+                   label = factor(karate_embeds[[.]]$label))) %>% 
+  reduce(rbind) %>%
+  group_by(method) %>%
+  mutate(ID = row_number()) %>% 
+  ungroup() %>%
+  mutate(type = "Type II")
+
+karate_context <- 
+  map(names(karate_embeds),
+      ~ data.frame(karate_embeds[[.]]$context, 
+                   method = str_replace(., "Karate", ""),
+                   label = factor(karate_embeds[[.]]$label))) %>%
+  reduce(rbind) %>%
+  group_by(method) %>%
+  mutate(ID = row_number()) %>%
+  ungroup() %>%
+  mutate(type = "Context")
+
+karate_all_embed <- rbind(karate_I_embed, karate_II_embed, karate_context)
+```
+
+```{r}
+gg_k1 <- karate_I_embed %>%
+  mutate(important_ID = ifelse(ID %in% c(1, 34), ID, "")) %>%
+  ggplot(aes(x = X1, y = X2, fill = label)) +
+    geom_point(color = "black", pch = 21, size = 5, position = "jitter") +
+    # geom_text_repel(aes(X1, X2, label = ID), force = .5) +
+    geom_text_repel(aes(label = important_ID), color = "black",
+                    point.padding = 1, min.segment.length = 0) +
+    # geom_density_2d() +
+    facet_wrap(~ method, scales = "free") +
+    theme_bw() +
+    theme(legend.position = "none", plot.margin=grid::unit(c(0,0,0,0), "mm")) +
+    labs(title = "Karate Type I Objective", x = NULL, y = NULL)
+gg_k1
+
+gg_k2 <- karate_all_embed %>%
+  filter(type %in% c("Type II", "Context")) %>%
+  mutate(important_ID = ifelse(ID %in% c(1, 34), ID, "")) %>%
+  ggplot(aes(x = X1, y = X2, fill = label, shape = type)) +
+  # ggplot(aes(x = X1, y = X2, color = interaction(label, type))) +
+    geom_point(size = 5, position = "jitter", color = "black") +
+    # geom_text(aes(label = important_ID), color = "black", size = 4) +
+    geom_text_repel(aes(label = important_ID), color = "black",
+                    point.padding = 1, min.segment.length = 0) +
+    facet_wrap(~ method, scales = "free") +
+    theme_bw() +
+    theme(legend.position = c(1, 0), legend.justification = c(1, 0),
+          plot.margin=grid::unit(c(0,0,0,0), "mm")) +
+    # theme(legend.position = "bottom") +
+    # scale_color_manual(name = "", 
+    #                    labels = c("Group A Context", "Group B Context",
+    #                               "Group A Embedding", "Group B Embedding"),
+    #                    values = c("turquoise", "red", "cyan", "pink")) + 
+    scale_shape_manual(name = "Vector Type",
+                       labels = c("Context", "Embedding"),
+                       values = c(21, 25)) +
+    guides(color = FALSE, fill = FALSE) +
+    labs(title = "Karate Type II Objective", x = NULL, y = NULL)
+gg_k2
+  
+ggsave("karate_I_embed.pdf", plot = gg_k1, device = "pdf", path = "plots")
+ggsave("karate_II_embed.pdf", plot = gg_k2, device = "pdf", path = "plots")
+```

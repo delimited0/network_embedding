@@ -10,9 +10,11 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r}
+source("reporting_tools.R")
 library(clipr)
 library(ggplot2)
-library(scales)
+library(ggrepel)
+library(directlabels)
 ```
 
 ## Blog Catalog
@@ -65,6 +67,19 @@ bg_compare_dat %>%
     geom_path() + geom_point() +
     theme_minimal() + 
     theme(legend.position = "bottom")
+
+# cherry pick most favorable comparison between RNS, others
+bg_rns_best <- bg_compare_dat %>%
+  filter(Labeled == 0.8, Type == "t2_embed", measure == "Micro-F1",
+         Method == "rns") %>%
+  filter(Score == max(Score))
+
+bg_LINE_best <- bg_compare_dat %>%
+  filter(Labeled == 0.8, Type == "t2_embed", measure == "Micro-F1",
+         Method == "LINE") %>%
+  filter(Score == max(Score))
+
+(bg_rns_best$Score / bg_LINE_best$Score) - 1
 ```
 
 ## Wikipedia
@@ -191,7 +206,7 @@ flickr_compare_dat <-
                   str_replace("line", "LINE"))
 ```
 
-### Combined Performance Plot
+## Combined Performance Plot
 
 ```{r}
 compare_dat <- rbind(flickr_compare_dat, bg_compare_dat,
@@ -231,30 +246,106 @@ ggsave("comp_typeI.pdf", plot = comp_typeI, device = "pdf", path = "plots")
 ggsave("comp_typeII.pdf", plot = comp_typeII, device = "pdf", path = "plots")
 ```
 
-### Tuning Plot
+## Tuning Plot
 
 ```{r}
 tune_typeI <- compare_dat %>% 
-  filter(Method == "rns", Labeled == 0.5) %>%
+  filter(Method %in% c("LINE", "rns"), Labeled == 0.5) %>%
   filter(Type == "t1_embed") %>%
+  group_by(Data, measure) %>%
+  mutate(LINE_Score = Score[Method == "LINE"]) %>%
   ggplot(aes(x = Penalty, y = Score)) +
     facet_wrap(measure ~ Data, scales = "free", nrow = 2) +
-    geom_path() + geom_point() +
+    geom_path() + geom_point() + 
+    geom_line(aes(x = Penalty, y = LINE_Score)) +
     theme_bw() + 
     theme(legend.position = "bottom", legend.text = element_text(size = 12)) +
-  labs(title = "Type I Embedding")
+  labs(title = "Type I Objective")
     
 tune_typeII <- compare_dat %>% 
-  filter(Method == "rns", Labeled == 0.5) %>%
-  filter(Type == "t1_embed") %>%
+  filter(Method %in% c("LINE", "rns"), Labeled == 0.5) %>%
+  filter(Type == "t2_embed") %>%
+  group_by(Data, measure) %>%
+  mutate(LINE_Score = Score[Method == "LINE"]) %>%
   ggplot(aes(x = Penalty, y = Score)) +
     facet_wrap(measure ~ Data, scales = "free", nrow = 2) +
     geom_path() + geom_point() +
+    geom_line(aes(x = Penalty, y = LINE_Score)) +
     theme_bw() + 
     theme(legend.position = "bottom", legend.text = element_text(size = 12)) + 
-  labs(title = "Type II Embedding")
+  labs(title = "Type II Objective")
 
 ggsave("tune_typeI.pdf", plot = tune_typeI, device = "pdf", path = "plots")
 ggsave("tune_typeII.pdf", plot = tune_typeII, device = "pdf", path = "plots")
 ```
 
+## node2vec style gain table
+
+## 3d score plot
+
+```{r}
+# Color coding
+wiki_compare_dat %>%
+  filter(Type == "t2_embed", measure == "Micro-F1") %>%
+  filter(Penalty %in% c(0.01, NA)) %>%
+  mutate(Penalty = as.factor(Penalty),
+         PMethod = paste0(Method, Penalty)) %>%
+  ggplot(aes(x = Labeled, y = Score, color = PMethod)) +
+    geom_point() + geom_path() + 
+    # geom_text_repel(data = filter(wiki_compare_dat, 
+    #                       Method == "rns", Type == "t1_embed", 
+    #                       measure == "Micro-F1", Labeled == 0.9) %>%
+    #                   mutate(Penalty = as.factor(Penalty)),
+    #                 aes(label = Penalty), nudge_x = 20,
+    #                 point.padding = unit(0.02, 'npc'),
+    #                 arrow = arrow(length = unit(0.02, 'npc'))) +
+    theme_bw() + 
+    # theme(legend.position = "none", legend.text = element_blank()) +
+    scale_x_continuous(breaks = seq(0, 1, 0.2)) +
+    coord_cartesian(xlim = c(0.05, 1)) 
+    
+
+# Penalty Panels 
+wiki_compare_dat %>%
+  filter(Method == "rns", Type == "t1_embed", measure == "Micro-F1") %>%
+  mutate(Penalty = as.factor(Penalty)) %>%
+  ggplot(aes(x = Labeled, y = Score)) +
+    facet_grid(~ Penalty) +
+    geom_point() + geom_path() +
+    scale_x_continuous(breaks = seq(0, 1, 0.2)) +
+    labs(title = "Wikipedia, Type I Embedding, Penalty Effect")
+```
+
+## Combined Table
+
+```{r}
+compare_dat <- rbind(flickr_compare_dat, bg_compare_dat, wiki_compare_dat) %>%
+  group_by(Method, Type, measure, Labeled, Data) %>%
+  mutate(is_best = Score == max(Score)) %>%
+  ungroup() %>%
+  filter(Labeled == 0.5 & is_best)
+  
+# Type I embedding
+compare_dat %>% 
+  filter(Type == "t1_embed") %>%
+  select(-Type, -Split, -Labeled, -is_best) %>%
+  unite(m_data, measure, Data) %>%
+  spread(key = m_data, value = Score)
+
+# Type II embedding
+compare_dat %>% 
+  filter(Type == "t2_embed", measure == "Micro-F1") %>%
+  select(-Type, -Split, -Labeled, -is_best) %>%
+  spread(key = Data, value = Score)
+
+compare_dat %>% 
+  filter(Type == "t2_embed", measure == "Macro-F1") %>%
+  select(-Type, -Split, -Labeled, -is_best) %>%
+  spread(key = Data, value = Score)
+  
+  unite(m_data, measure, Data) %>%
+  spread(key = m_data, value = Score)
+
+compare_dat %>% filter(Method == "rns", measure == "Macro-F1")
+
+```
