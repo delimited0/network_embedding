@@ -14,7 +14,8 @@ source("reporting_tools.R")
 library(clipr)
 library(ggplot2)
 library(ggrepel)
-library(directlabels)
+library(cowplot)
+library(scales)
 ```
 
 ## Blog Catalog
@@ -186,7 +187,6 @@ write_clip(flickr_perf_t2_micro)
 write_clip(flickr_perf_t2_macro)
 ```
 
-### Plots
 
 ```{r}
 flickr_compare_dat <- 
@@ -209,74 +209,89 @@ flickr_compare_dat <-
 ## Combined Performance Plot
 
 ```{r}
-compare_dat <- rbind(flickr_compare_dat, bg_compare_dat,
-                     ppi_compare_dat, wiki_compare_dat)
+compare_dat <- rbind(flickr_compare_dat, bg_compare_dat, #ppi_compare_dat, 
+                     wiki_compare_dat) %>%
+  mutate(Method = str_replace_all(Method, 
+                                  c("kkk" = "NN-NS", 
+                                    "LINE" = "NS",
+                                    "rns" = "RNS",
+                                    "nopenalty" = "RNS No Penalty")))
 
-comp_typeI <- compare_dat %>%
-  filter(Method %in% c("LINE", "nopenalty", "kkk") | 
+comp_dat <- compare_dat %>%
+  filter(Method %in% c("NS", "RNS No Penalty", "NN-NS") | 
          (Data == "Blog Catalog" & Penalty == 0.015) |
          (Data == "Wikipedia" & Penalty == 0.015) |
          (Data == "PPI (Homo Sapiens)" & Penalty == 0.015) |
-         (Data == "Flickr" & Penalty == 0.008)) %>%
-  filter(Type == "t1_embed") %>%
+         (Data == "Flickr" & Penalty == 0.020))
+  
+comp_I_micro_plot <- comp_dat %>%
+  filter(measure == "Micro-F1", Type == "t1_embed") %>%
   ggplot(aes(x = Labeled, y = Score, color = Method)) +
-    facet_wrap(measure ~ Data, scales = "free", nrow = 2) + 
+    facet_wrap(~ Data, scales = "free", nrow = 1) +
     geom_path() + geom_point(aes(shape = Method)) +
     theme_bw() + 
-    theme(legend.position = "bottom", legend.text = element_text(size = 12)) +
-    scale_x_continuous(breaks = seq(0, 1, 0.2)) +
-    ggtitle("Type I Embedding")
+    theme(legend.position = "bottom", legend.text = element_text(size = 12),
+          axis.title.x = element_blank(), axis.title.y = element_blank(),
+          axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+    scale_x_continuous(breaks = seq(0, 1, 0.2))
+comp_I_macro_plot <- comp_I_micro_plot %+% 
+  filter(comp_dat, measure == "Macro-F1", Type == "t1_embed")
+  
+comp_II_micro_plot <- (comp_I_micro_plot + ggtitle("Type II Objective")) %+% 
+  filter(comp_dat, measure == "Micro-F1", Type == "t2_embed")
+comp_II_macro_plot <- (comp_II_micro_plot) %+% 
+  filter(comp_dat, measure == "Macro-F1", Type == "t2_embed")
 
-comp_typeII <- compare_dat %>%
-  filter(Method %in% c("LINE", "nopenalty", "kkk") | 
-         (Data == "Blog Catalog" & Penalty == 0.015) |
-         (Data == "Wikipedia" & Penalty == 0.015) |
-         (Data == "PPI (Homo Sapiens)" & Penalty == 0.015) |
-         (Data == "Flickr" & Penalty == 0.008)) %>%
-  filter(Type == "t2_embed") %>%
-  ggplot(aes(x = Labeled, y = Score, color = Method)) +
-    facet_wrap(measure ~ Data, scales = "free", nrow = 2) + 
-    geom_path() + geom_point(aes(shape = Method)) +
-    theme_bw() + 
-    theme(legend.position = "bottom", legend.text = element_text(size = 12)) +
-    scale_x_continuous(breaks = seq(0, 1, 0.2)) +
-    ggtitle("Type II Embedding")
+comp_plot <- plot_grid(
+  ggdraw() + draw_label("Type I Objective", x = 0, hjust = 0),
+  ggdraw() + draw_label("Type II Objective", x = 0, hjust = 0),
+  comp_I_micro_plot + labs(title = "Micro-F1") + theme(legend.position = "none"), 
+  comp_II_micro_plot + labs(title = "Micro-F1") + theme(legend.position = "none"), 
+  comp_I_macro_plot + labs(title = "Macro-F1") + theme(legend.position = "none"),
+  comp_II_macro_plot + labs(title = "Macro-F1") + theme(legend.position = "none"),
+  nrow = 3, ncol = 2, rel_heights = c(.1, 1, 1), rel_widths = c(1, 1)
+) %>% plot_grid(get_legend(comp_I_micro_plot), ncol = 1, rel_heights = c(1, .1))
 
-ggsave("comp_typeI.pdf", plot = comp_typeI, device = "pdf", path = "plots")
-ggsave("comp_typeII.pdf", plot = comp_typeII, device = "pdf", path = "plots")
+ggsave("comp.pdf", plot = comp_plot, device = "pdf", path = "plots", height = 5)
 ```
 
 ## Tuning Plot
 
 ```{r}
-tune_typeI <- compare_dat %>% 
-  filter(Method %in% c("LINE", "rns"), Labeled == 0.5) %>%
-  filter(Type == "t1_embed") %>%
-  group_by(Data, measure) %>%
-  mutate(LINE_Score = Score[Method == "LINE"]) %>%
+tune_dat <- compare_dat %>% 
+  filter(Method %in% c("NS", "RNS"), Labeled == 0.5) %>%
+  group_by(Data, measure, Type) %>%
+  mutate(NS_Score = Score[Method == "NS"]) 
+  
+tune_I_micro_plot <- tune_dat %>%
+  filter(measure == "Micro-F1", Type == "t1_embed") %>%
   ggplot(aes(x = Penalty, y = Score)) +
-    facet_wrap(measure ~ Data, scales = "free", nrow = 2) +
+    facet_wrap(~ Data, scales = "free", nrow = 1) +
     geom_path() + geom_point() + 
-    geom_line(aes(x = Penalty, y = LINE_Score)) +
-    theme_bw() + 
-    theme(legend.position = "bottom", legend.text = element_text(size = 12)) +
-  labs(title = "Type I Objective")
-    
-tune_typeII <- compare_dat %>% 
-  filter(Method %in% c("LINE", "rns"), Labeled == 0.5) %>%
-  filter(Type == "t2_embed") %>%
-  group_by(Data, measure) %>%
-  mutate(LINE_Score = Score[Method == "LINE"]) %>%
-  ggplot(aes(x = Penalty, y = Score)) +
-    facet_wrap(measure ~ Data, scales = "free", nrow = 2) +
-    geom_path() + geom_point() +
-    geom_line(aes(x = Penalty, y = LINE_Score)) +
-    theme_bw() + 
-    theme(legend.position = "bottom", legend.text = element_text(size = 12)) + 
-  labs(title = "Type II Objective")
+    geom_line(aes(x = Penalty, y = NS_Score)) +
+    theme_bw() +
+    theme(legend.position = "bottom", legend.text = element_text(size = 12),
+          axis.title.x = element_blank(), axis.title.y = element_blank(),
+          axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+tune_I_macro_plot <- tune_I_micro_plot %+% 
+  filter(tune_dat, measure == "Macro-F1", Type == "t1_embed")
 
-ggsave("tune_typeI.pdf", plot = tune_typeI, device = "pdf", path = "plots")
-ggsave("tune_typeII.pdf", plot = tune_typeII, device = "pdf", path = "plots")
+tune_II_micro_plot <- tune_I_micro_plot %+% 
+  filter(tune_dat, measure == "Micro-F1", Type == "t2_embed")
+tune_II_macro_plot <- tune_I_macro_plot %+%
+  filter(tune_dat, measure == "Macro-F1", Type == "t2_embed")
+  
+tune_plot <- plot_grid(
+  ggdraw() + draw_label("Type I Objective", x = 0, hjust = 0),
+  ggdraw() + draw_label("Type II Objective", x = 0, hjust = 0),
+  tune_I_micro_plot + labs(title = "Micro-F1") + theme(legend.position = "none"),  
+  tune_II_micro_plot + labs(title = "Micro-F1") + theme(legend.position = "none"),  
+  tune_I_macro_plot + labs(title = "Macro-F1") + theme(legend.position = "none"), 
+  tune_II_macro_plot + labs(title = "Macro-F1") + theme(legend.position = "none"), 
+  nrow = 3, rel_heights = c(.1, 1, 1), rel_widths = c(1, 1)
+)
+
+ggsave("tune.pdf", plot = tune_plot, device = "pdf", path = "plots", height = 5)
 ```
 
 ## node2vec style gain table

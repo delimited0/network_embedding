@@ -24,7 +24,8 @@ l2logreg_ml <- l2logreg %>%
   # makeConstantClassWrapper() %>%
   makeMultilabelBinaryRelevanceWrapper()
 frac_descs = lapply(seq(.1, .9, .1), function(frac) {
-  makeResampleDesc(method = "Subsample", stratify = FALSE, iters = 10, split = frac)
+  makeResampleDesc(method = "Subsample", stratify = FALSE, 
+                   iters = 10, split = frac)
 })  
 ```
 
@@ -39,15 +40,17 @@ flickr_label_mat <- flickr_dat$Label %>%
   data.frame() %>%
   model.matrix(~ . - 1, data = .) == 1
 colnames(flickr_label_mat) <- paste0("class_", 1:ncol(flickr_label_mat))
-flickr_embeds <- lapply(dir(path = "Flickr", pattern = "*_flickr", full.names = TRUE), 
-                        readMat, USE.NAMES = TRUE)
+flickr_embeds <- lapply(dir(path = "Flickr", pattern = "*_flickr", 
+                            full.names = TRUE), readMat, USE.NAMES = TRUE)
 names(flickr_embeds) <- dir(path = "Flickr", pattern = "*_flickr") %>% 
   gsub(x = ., pattern = ".mat", replacement = "")
 
 flickr_embed_dats <- 
   lapply(flickr_embeds, 
-         function(x) list(t1_embed = as_embed_df(get_type_k(x, 1), flickr_label_mat), 
-                          t2_embed = as_embed_df(get_type_k(x, 2), flickr_label_mat))
+         function(x) list(t1_embed = as_embed_df(get_type_k(x, 1),
+                                                 flickr_label_mat), 
+                          t2_embed = as_embed_df(get_type_k(x, 2),
+                                                 flickr_label_mat))
 )
 ```
 
@@ -55,22 +58,26 @@ flickr_embed_dats <-
 
 ```{r flickr multiclass}
 flickr_tasks <- lapply(unlist(flickr_embed_dats, recursive = FALSE), function(embd) {
-    makeMultilabelTask(data = embd, target = paste0("class_", 1:ncol(flickr_label_mat)))
+    makeMultilabelTask(data = embd, 
+                       target = paste0("class_",1:ncol(flickr_label_mat)))
   }
 )
 
 set.seed(13)
 # flickr_perf <- repeat_resampler(flickr_tasks, frac_descs, l2logreg, 20)
-flickr_perf <- multilabel_resample(tasks = flickr_tasks, splits = seq(.1, .9, .1), 
-                               labels = as.matrix(flickr_label_mat), 
-                               learner = l2logreg_ml, iters = 5, min_case = 1)
+flickr_perf <- 
+  multilabel_resample(tasks = flickr_tasks, 
+                      splits = seq(.1, .9, .1), 
+                      labels = as.matrix(flickr_label_mat), 
+                      learner = l2logreg_ml, iters = 5, min_case = 1)
 save(flickr_perf, file = "perf_data/flickr.Rda")
 
 flickr_t1_tables <- map(flickr_perf, ~.[mod(1:nrow(.), 2) == 1,])
 map2(flickr_t1_tables, names(flickr_t1_tables), 
      ~kable(x = .x, digits = 4, format = "html"))
 flickr_t2_tables <- map(flickr_perf, ~.[mod(1:nrow(.), 2) == 0,])
-map2(flickr_t2_tables, names(flickr_t2_tables), ~kable(x = .x, digits = 4, caption = .y))
+map2(flickr_t2_tables, names(flickr_t2_tables),
+     ~kable(x = .x, digits = 4, caption = .y))
 ```
 
 
@@ -92,8 +99,10 @@ colnames(bg_label_mat) <- paste0("class_", 1:ncol(bg_label_mat))
 
 bg_embed_dats <- 
   lapply(bg_embeds, 
-         function(x) list(t1_embed = as_embed_df(get_type_k(x, 1), bg_label_mat), 
-                          t2_embed = as_embed_df(get_type_k(x, 2), bg_label_mat))
+         function(x) list(t1_embed = as_embed_df(get_type_k(x, 1),
+                                                 bg_label_mat), 
+                          t2_embed = as_embed_df(get_type_k(x, 2),
+                                                 bg_label_mat))
 )
 
 # original line embedding
@@ -104,7 +113,8 @@ bg_embed_dats <-
 
 ```{r}
 bg_tasks <- lapply(unlist(bg_embed_dats, recursive = FALSE), function(embd) {
-    makeMultilabelTask(data = embd, target = paste0("class_", 1:ncol(bg_label_mat)))
+    makeMultilabelTask(data = embd, 
+                       target = paste0("class_", 1:ncol(bg_label_mat)))
   }
 )
 # bg_tline_I_task <- makeMultilabelTask(data = bg_tline_I_dat, 
@@ -137,17 +147,21 @@ hist(apply(bg_embed_dats$rns_02_BlogCatalog$t1_embed, 1, function(x) sqrt(sum(x^
 ```{r}
 ppi_label <- readMat("Protein/Labelppi.mat")
 ppi_label_mat <- ppi_label$Label.ppi %>% as.matrix()
-ppi_embeds <- lapply(dir(path = "Protein", pattern = "*_ppi", full.names = TRUE), 
-                     readMat, USE.NAMES = TRUE)
+ppi_embeds <- lapply(dir(path = "Protein", pattern = "*_ppi", 
+                         full.names = TRUE), readMat, USE.NAMES = TRUE)
 names(ppi_embeds) <- dir(path = "Protein", pattern = "*_ppi") %>% 
   gsub(x = ., pattern = ".mat", replacement = "")
 
 colnames(ppi_label_mat) <- paste0("class_", 1:ncol(ppi_label_mat))
 
+colSums(ppi_label_mat)
+
 ppi_embed_dats <- 
   lapply(ppi_embeds, 
-         function(x) list(t1_embed = as_embed_df(get_type_k(x, 1), ppi_label_mat), 
-                          t2_embed = as_embed_df(get_type_k(x, 2), ppi_label_mat))
+         function(x) list(t1_embed = as_embed_df(get_type_k(x, 1), 
+                                                 ppi_label_mat), 
+                          t2_embed = as_embed_df(get_type_k(x, 2),
+                                                 ppi_label_mat))
 )
 ```
 
@@ -155,7 +169,8 @@ ppi_embed_dats <-
 
 ```{r}
 ppi_tasks <- lapply(unlist(ppi_embed_dats, recursive = FALSE), function(embd) {
-    makeMultilabelTask(data = embd, target = paste0("class_", 1:ncol(ppi_label_mat)))
+    makeMultilabelTask(data = embd, 
+                       target = paste0("class_", 1:ncol(ppi_label_mat)))
   }
 )
 set.seed(13)

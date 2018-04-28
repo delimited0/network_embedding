@@ -124,7 +124,9 @@ small_class_mccv <- function(label_mat, split = .5, min_case = 1) {
   
   sample_list <- sample_list[-starting_sample]
   split_size <- floor(split * nrow(label_mat)) - length(starting_sample)
-  train_ind <- c(sample(sample_list, size = split_size, replace = FALSE), starting_sample)
+  if (split_size < 1) stop("Can't have than many guaranteed samples per class")
+  train_ind <- c(sample(sample_list, size = split_size, replace = FALSE), 
+                 starting_sample)
   test_ind <- which(!(1:nrow(label_mat) %in% train_ind))
   
   return(list(train = train_ind, tests = test_ind))
@@ -150,7 +152,7 @@ multilabel_resample <- function(tasks, splits, labels, learner, iters,
                         dimnames = list(names(tasks), 
                                         paste0("split_", splits), 
                                         paste0("iter_", 1:iters)))
-  
+  results <- list()
   for (s in 1:length(splits)) {
     for (t in 1:length(tasks)) {
       printer(names(tasks)[t], splits[s])
@@ -162,6 +164,7 @@ multilabel_resample <- function(tasks, splits, labels, learner, iters,
         res <- performance(pred, measures = list(micro.f1, macro.f1))
         micro_f1_tbl[t, s, i] <- res["micro.f1"]
         macro_f1_tbl[t, s, i] <- res["macro.f1"]
+        results <- append(results, res)
       }
     }
   }
