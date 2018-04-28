@@ -4,3 +4,5 @@ flickr/*.mat
 Protein/*.mat
 wikipedia/*.mat
 Karate/*.mat
+.Rhistory
+.DS_Store
