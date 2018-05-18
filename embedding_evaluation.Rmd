@@ -87,8 +87,8 @@ map2(flickr_t2_tables, names(flickr_t2_tables),
 
 ```{r}
 bg_label <- readMat("BlogCatalog/LabelBlogCatalog.mat")
-bg_embeds <- lapply(dir(path = "BlogCatalog", pattern = "*_BlogCatalog", full.names = TRUE), 
-                    readMat, USE.NAMES = TRUE)
+bg_embeds <- lapply(dir(path = "BlogCatalog", pattern = "*_BlogCatalog",
+                        full.names = TRUE), readMat, USE.NAMES = TRUE)
 names(bg_embeds) <- dir(path = "BlogCatalog", pattern = "*_BlogCatalog") %>% 
   gsub(x = ., pattern = ".mat", replacement = "")
 
@@ -211,15 +211,18 @@ wiki_label_mat %<>% .[, -which(colSums(.) < 2)] # cannot keep classes with only 
 
 wiki_embed_dats <- 
   lapply(wiki_embeds, 
-         function(x) list(t1_embed = as_embed_df(get_type_k(x, 1), wiki_label_mat), 
-                          t2_embed = as_embed_df(get_type_k(x, 2), wiki_label_mat))
+         function(x) list(t1_embed = as_embed_df(get_type_k(x, 1), 
+                                                 wiki_label_mat), 
+                          t2_embed = as_embed_df(get_type_k(x, 2), 
+                                                 wiki_label_mat))
 )
 ```
 
 ### Wikipedia multilabel benchmark
 
 ```{r}
-wiki_tasks <- lapply(unlist(wiki_embed_dats, recursive = FALSE), function(embd) {
+wiki_tasks <- lapply(unlist(wiki_embed_dats, recursive = FALSE), function(embd) 
+  {
     makeMultilabelTask(data = embd, target = colnames(wiki_label_mat))
   }
 )
