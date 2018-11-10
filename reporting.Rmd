@@ -50,7 +50,9 @@ write_clip(bg_perf_t2_macro)
 bg_compare_dat <- 
   rbind(
     perf_as_df(rowMeans(bg_perf$micro_f1, FALSE, 2), "Micro-F1"),
-    perf_as_df(rowMeans(bg_perf$macro_f1, FALSE, 2), "Macro-F1")
+    perf_as_df(rowMeans(bg_perf$macro_f1, FALSE, 2), "Macro-F1"),
+    perf_as_df(apply(bg_perf$micro_f1, c(1, 2), function(x) sd(x) / sqrt(5)), "Micro-F1_sd"),
+    perf_as_df(apply(bg_perf$macro_f1, c(1, 2), function(x) sd(x) / sqrt(5)), "Macro-F1_sd")
   ) %>% 
   # filter(Method %in% c("kkk_BlogCatalog", "LINE_BlogCatalog", 
                        # "nopenalty_BlogCatalog", "rns_015_BlogCatalog")) %>%
@@ -62,12 +64,12 @@ bg_compare_dat <-
            as.numeric(),
          Method = str_replace(Method, "_.*", ""))
 
-bg_compare_dat %>% 
-  filter(measure == "Micro-F1" & Type == "t1_embed") %>%
-  ggplot(aes(x = Labeled, y = Score, color = Method)) +
-    geom_path() + geom_point() +
-    theme_minimal() + 
-    theme(legend.position = "bottom")
+# bg_compare_dat %>% 
+#   filter(measure == "Micro-F1" & Type == "t1_embed") %>%
+#   ggplot(aes(x = Labeled, y = Score, color = Method)) +
+#     geom_path() + geom_point() +
+#     theme_minimal() + 
+#     theme(legend.position = "bottom")
 
 # cherry pick most favorable comparison between RNS, others
 bg_rns_best <- bg_compare_dat %>%
@@ -342,7 +344,7 @@ wiki_compare_dat %>%
 
 ## Combined Table
 
-```{r}
+```{r micro/macro f1 table data}
 compare_table <- compare_dat %>% 
   group_by(Method, Type, measure, Labeled, Data) %>%
   # mutate(is_best = Score == max(Score)) %>%
@@ -383,5 +385,13 @@ compare_table %>%
   spread(key = m_data, value = Score)
 
 compare_dat %>% filter(Method == "rns", measure == "Macro-F1")
+```
 
+```{r uncertainty} 
+compare_table %>% 
+  filter(Type == "t2_embed", measure == "Micro-F1") %>% 
+  group_by(Type, measure, Method) %>%
+  mutate(sd = sd(Score)) %>% ungroup() %>%
+  select(-Type, -Split, -Labeled, -is_best) %>%
+  spread(key = Data, value = Score)
 ```

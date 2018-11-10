@@ -32,6 +32,18 @@ macro.f1 <- makeMeasure(id = "macro.f1", name = "macro f1 score",
                         properties = c("classif", "classif.multi", "multilabel"),
                         best = 1, worst = 0, fun = mm.f1.fun,
                         extra.args = list(average = "macro"))
+roc.auc.fun <- function(task, model, pred, feats, extra.args) {
+  # scikit-learn f1 score
+  sk$metrics$roc_auc_score(y_true = getPredictionTruth(pred),
+                           y_score = getPredictionProbabilities(pred),
+                           average = extra.args$average)
+}
+micro.f1.sd <- setAggregation(micro.f1, test.sd)
+macro.f1.sd <- setAggregation(macro.f1, test.sd)
+multilabel.acc.sd <- setAggregation(multilabel.acc, test.sd)
+multilabel.tpr.sd <- setAggregation(multilabel.tpr, test.sd)
+multilabel.ppv.sd <- setAggregation(multilabel.ppv, test.sd)
+
 
 get_type_k <- function(two_embeds, k) {
   # two_embeds - list of embedding matrices from Matlab
@@ -83,6 +95,10 @@ repeat_resampler <- function(tasks, descs, learner, attempts, verbose = TRUE) {
                          dimnames = mat_names)
   macro_f1_tbl <- matrix(nrow = length(tasks), ncol = length(descs),
                          dimnames = mat_names)
+  micro_f1_sd_tbl <- matrix(nrow = length(tasks), ncol = length(descs), 
+                         dimnames = mat_names)
+  macro_f1_sd_tbl <- matrix(nrow = length(tasks), ncol = length(descs), 
+                         dimnames = mat_names)
   for (d in 1:length(descs)) {
     for (k in 1:length(tasks)) {
       printer(names(tasks)[k], descs[[d]])
@@ -92,16 +108,20 @@ repeat_resampler <- function(tasks, descs, learner, attempts, verbose = TRUE) {
         a <- a + 1
         try(
           res <- resample(learner = learner, task = tasks[[k]], resampling = descs[[d]], 
-                          show.info = FALSE, measures = list(micro.f1, macro.f1)) 
+                          show.info = FALSE, 
+                          measures = list(micro.f1, macro.f1, micro.f1.sd, macro.f1.sd)) 
         )
       }
       
       micro_f1_tbl[k, d] <- res$aggr["micro.f1.test.mean"]
       macro_f1_tbl[k, d] <- res$aggr["macro.f1.test.mean"]
+      micro_f1_sd_tbl[k, d] <- res$aggr["micro.f1.test.sd"]
+      macro_f1_sd_tbl[k, d] <- res$aggr["macro.f1.test.sd"]
       # resamps <- c(resamps, res)
     }
   }
-  return(list(micro_f1 = micro_f1_tbl, macro_f1 = macro_f1_tbl))
+  return(list(micro_f1 = micro_f1_tbl, macro_f1 = macro_f1_tbl,
+              micro_f1_sd = micro_f1_sd_tbl, macro_f1_sd = macro_f1_sd_tbl))
 }
 
 small_class_mccv <- function(label_mat, split = .5, min_case = 1) {
@@ -161,7 +181,8 @@ multilabel_resample <- function(tasks, splits, labels, learner, iters,
         mccv <- small_class_mccv(labels, splits[s], min_case)
         mod <- train(learner, tasks[[t]], subset = mccv$train)
         pred <- predict(mod, tasks[[t]], subset = mccv$test)
-        res <- performance(pred, measures = list(micro.f1, macro.f1))
+        res <- performance(pred, measures = list(micro.f1, macro.f1,
+                                                 micro.f1.sd, macro.f1.sd))
         micro_f1_tbl[t, s, i] <- res["micro.f1"]
         macro_f1_tbl[t, s, i] <- res["macro.f1"]
         results <- append(results, res)

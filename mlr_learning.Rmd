@@ -28,8 +28,15 @@ lrn.br = makeLearner("classif.LiblineaRL2LogReg", predict.type = "prob")
 lrn.br = makeMultilabelBinaryRelevanceWrapper(lrn.br)
 mod = train(lrn.br, yeast.task)
 
+multilabel.f1.sd <- setAggregation(multilabel.f1, test.sd)
+
 rdesc = makeResampleDesc(method = "Subsample", stratify = FALSE, 
                          iters = 10, split = 3/25)
 r = resample(learner = lrn.br, task = yeast.task, resampling = rdesc, 
-             show.info = FALSE, measures = list(multilabel.f1))
+             show.info = FALSE, measures = list(multilabel.f1, multilabel.f1.sd))
+
+# you don't get aggr=SD with performance because you only did one split
+mod <- train(lrn.br, yeast.task)
+pred <- predict(mod, yeast.task)
+res <- performance(pred, measures = list(multilabel.f1, multilabel.f1.sd))
 ```
